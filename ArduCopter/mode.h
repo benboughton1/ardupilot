@@ -125,7 +125,7 @@ public:
     }
     virtual void exit() {};
     virtual void run() = 0;
-    virtual bool requires_GPS() const = 0;
+    virtual bool requires_position() const = 0;
     virtual bool has_manual_throttle() const = 0;
     virtual bool allows_arming(AP_Arming::Method method) const = 0;
     virtual bool is_autopilot() const = 0;
@@ -207,6 +207,10 @@ public:
 #if WEATHERVANE_ENABLED
     virtual bool allows_weathervaning() const { return false; }
 #endif
+
+    // Return true if this mode is enabled, used by MAVLink available modes
+    // For example flow hold mode requires optical flow to be enabled
+    virtual bool enabled() const { return true; }
 
 protected:
 
@@ -446,7 +450,7 @@ public:
 
     virtual void run() override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return true; }
     bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
@@ -454,7 +458,6 @@ public:
     void exit() override;
     // Called when air mode is enabled via AUX switch; prevents automatic reset to default air_mode state
     void air_mode_aux_changed();
-    bool allows_save_trim() const override { return true; }
     bool allows_flip() const override { return true; }
     bool crash_check_enabled() const override { return false; }
     bool allows_entry_in_rc_failsafe() const override { return false; }
@@ -484,7 +487,7 @@ public:
 
     bool init(bool ignore_checks) override;
     void run() override;
-    void virtual_flybar( float &roll_out, float &pitch_out, float &yaw_out, float pitch_leak, float roll_leak);
+    void virtual_flybar( float &roll_out_rads, float &pitch_out_rads, float &yaw_out_rads, float pitch_leak, float roll_leak);
 
 protected:
 private:
@@ -502,7 +505,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
@@ -538,7 +541,7 @@ public:
     void exit() override;
     void run() override;
 
-    bool requires_GPS() const override;
+    bool requires_position() const override;
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override;
     bool is_autopilot() const override { return true; }
@@ -675,12 +678,11 @@ private:
     void loiter_to_alt_run();
     void nav_attitude_time_run();
 
-    // return the Location portion of a command.  If the command's lat and lon and/or alt are zero the default_loc's lat,lon and/or alt are returned instead
-    Location loc_from_cmd(const AP_Mission::Mission_Command& cmd, const Location& default_loc) const;
+    // get the Location portion of a command.  If the command's lat and lon and/or alt are zero the default_loc's lat,lon and/or alt are returned instead
+    // returns false if the location cannot be determined which only happens if the terrain data is unavailable
+    bool get_loc_from_cmd(const AP_Mission::Mission_Command& cmd, const Location& default_loc, Location& loc) const WARN_IF_UNUSED;
 
     SubMode _mode = SubMode::TAKEOFF;   // controls which auto controller is run
-
-    bool shift_alt_to_current_alt(Location& target_loc) const;
 
     // subtract position controller offsets from target location
     // should be used when the location will be used as a target for the position controller
@@ -690,12 +692,12 @@ private:
     void do_nav_wp(const AP_Mission::Mission_Command& cmd);
     bool set_next_wp(const AP_Mission::Mission_Command& current_cmd, const Location &default_loc);
     void do_land(const AP_Mission::Mission_Command& cmd);
-    void do_loiter_unlimited(const AP_Mission::Mission_Command& cmd);
+    bool do_loiter_unlimited(const AP_Mission::Mission_Command& cmd);
     void do_circle(const AP_Mission::Mission_Command& cmd);
     void do_loiter_time(const AP_Mission::Mission_Command& cmd);
     void do_loiter_to_alt(const AP_Mission::Mission_Command& cmd);
     void do_spline_wp(const AP_Mission::Mission_Command& cmd);
-    void get_spline_from_cmd(const AP_Mission::Mission_Command& cmd, const Location& default_loc, Location& dest_loc, Location& next_dest_loc, bool& next_dest_loc_is_spline);
+    bool get_spline_from_cmd(const AP_Mission::Mission_Command& cmd, const Location& default_loc, Location& dest_loc, Location& next_dest_loc, bool& next_dest_loc_is_spline);
 #if AC_NAV_GUIDED
     void do_nav_guided_enable(const AP_Mission::Mission_Command& cmd);
     void do_guided_limits(const AP_Mission::Mission_Command& cmd);
@@ -848,7 +850,7 @@ public:
     void exit() override;
     void run() override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; }
     bool is_autopilot() const override { return false; }
@@ -873,7 +875,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return true; }
@@ -903,7 +905,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return true; }
@@ -933,7 +935,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
@@ -961,11 +963,13 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return false; }
     bool crash_check_enabled() const override { return false; }
+
+    void abandon_flip();
 
 protected:
 
@@ -985,6 +989,7 @@ private:
         Recover,
         Abandon
     };
+    bool abandon_requested;
     FlipState _state;                   // current state of flip
     Mode::Number  orig_control_mode;    // flight mode when flip was initiated
     uint32_t start_time_ms;             // time since flip began
@@ -1008,7 +1013,7 @@ public:
     bool init(bool ignore_checks) override;
     void run(void) override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
@@ -1016,6 +1021,9 @@ public:
         return !must_navigate;
     }
     bool allows_flip() const override { return true; }
+
+    // Return true if this mode is enabled, used by MAVLink available modes
+    bool enabled() const override;
 
     static const struct AP_Param::GroupInfo var_info[];
 
@@ -1096,7 +1104,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override;
     bool is_autopilot() const override { return true; }
@@ -1113,16 +1121,9 @@ public:
 
     // Return true if the throttle high arming check can be skipped when arming from GCS or Scripting
     bool allows_GCS_or_SCR_arming_with_throttle_high() const override { return true; }
-
-    // Sets guided's angular target submode: Using a rotation quaternion, angular velocity, and climbrate or thrust (depends on user option)
-    // attitude_quat: IF zero: ang_vel (angular velocity) must be provided even if all zeroes
-    //                IF non-zero: attitude_control is performed using both the attitude quaternion and angular velocity
-    // ang_vel: angular velocity (rad/s)
-    // climb_rate_ms_or_thrust: represents either the climb_rate (m/s) or thrust scaled from [0, 1], unitless
-    // use_thrust: IF true: climb_rate_ms_or_thrust represents thrust
-    //             IF false: climb_rate_ms_or_thrust represents climb_rate (m/s)
     void set_angle(const Quaternion &attitude_quat, const Vector3f &ang_vel, float climb_rate_ms_or_thrust, bool use_thrust);
 
+    void hold_position();
     bool set_pos_NED_m(const Vector3p& pos_ned_m, bool use_yaw = false, float yaw_rad = 0.0, bool use_yaw_rate = false, float yaw_rate_rads = 0.0, bool yaw_relative = false, bool is_terrain_alt = false);
     bool set_destination(const Location& dest_loc, bool use_yaw = false, float yaw_rad = 0.0, bool use_yaw_rate = false, float yaw_rate_rads = 0.0, bool yaw_relative = false);
     bool get_wp(Location &loc) const override;
@@ -1231,12 +1232,13 @@ private:
     void set_yaw_state_rad(bool use_yaw, float yaw_rad, bool use_yaw_rate, float yaw_rate_rads, bool relative_angle);
 
     // controls which controller is run (pos or vel):
-    static SubMode guided_mode;
-    static bool send_notification;     // used to send one time notification to ground station
+    SubMode guided_mode = SubMode::TakeOff;
+     // used to send one time notification to ground station:
+    bool send_notification;
     static bool takeoff_complete;      // true once takeoff has completed (used to trigger retracting of landing gear)
 
     // guided mode is paused or not
-    static bool _paused;
+    bool _paused;
 };
 
 #if AP_SCRIPTING_ENABLED
@@ -1273,7 +1275,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return false; }
     bool is_autopilot() const override { return true; }
 
@@ -1297,7 +1299,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return true; }
@@ -1314,6 +1316,7 @@ public:
     bool controlling_position() const { return control_position; }
 
     void set_land_pause(bool new_value) { land_pause = new_value; }
+    bool use_pilot_yaw() const override;
 
     // parameter accessors
     float get_land_speed_ms() const { return land_speed_ms.get(); }
@@ -1358,7 +1361,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
@@ -1401,14 +1404,14 @@ private:
 class ModePosHold : public Mode {
 
 public:
-    // inherit constructor
-    using Mode::Mode;
+    // need a constructor for parameters
+    ModePosHold(void);
     Number mode_number() const override { return Number::POSHOLD; }
 
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
@@ -1416,12 +1419,21 @@ public:
     bool allows_autotune() const override { return true; }
     bool allows_auto_trim() const override { return true; }
 
+    // convert parameters
+    void convert_params();
+
+    // mode specific parameter variable table
+    static const struct AP_Param::GroupInfo var_info[];
+
 protected:
 
     const char *name() const override { return "Position Hold"; }
     const char *name4() const override { return "PHLD"; }
 
 private:
+
+    // parameters
+    AP_Float brake_angle_max_deg;   // max lean angle (in degrees) during braking
 
     void update_pilot_lean_angle_rad(float &lean_angle_filtered_rad, float &lean_angle_raw_rad);
     float mix_controls(float mix_ratio, float first_control, float second_control);
@@ -1496,7 +1508,7 @@ public:
     }
     void run(bool disarm_on_land);
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return true; }
@@ -1630,7 +1642,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; }
     bool is_autopilot() const override { return true; }
@@ -1640,6 +1652,9 @@ public:
 
     bool is_landing() const override;
     bool use_pilot_yaw() const override;
+
+    // Return true if this mode is enabled, used by MAVLink available modes
+    bool enabled() const override;
 
     // Safe RTL states
     enum class SubMode : uint8_t {
@@ -1690,7 +1705,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
@@ -1717,7 +1732,7 @@ public:
 
     virtual void run() override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return true; }
     bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
@@ -1765,11 +1780,14 @@ public:
     void run() override;
     void exit() override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return true; }
     bool allows_arming(AP_Arming::Method method) const override { return false; };
     bool is_autopilot() const override { return false; }
     bool logs_attitude() const override { return true; }
+
+    // Return true if this mode is enabled, used by MAVLink available modes
+    bool enabled() const override;
 
     void set_magnitude(float input) { waveform_magnitude.set(input); }
 
@@ -1844,7 +1862,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return true; };
     bool is_autopilot() const override { return false; }
@@ -1902,13 +1920,16 @@ public:
     void run() override;
     void exit() override;
 
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return true; }
     bool allows_arming(AP_Arming::Method method) const override;
     bool is_autopilot() const override { return false; }
     void change_motor_direction(bool reverse);
     void output_to_motors() override;
     bool allows_entry_in_rc_failsafe() const override { return false; }
+
+    // Return true if this mode is enabled, used by MAVLink available modes
+    bool enabled() const override;
 
 protected:
     const char *name() const override { return "Turtle"; }
@@ -1941,7 +1962,7 @@ public:
     bool init(bool ignore_checks) override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; }
     bool is_autopilot() const override { return true; }
@@ -1971,10 +1992,13 @@ public:
     void exit() override;
     void run() override;
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; }
     bool is_autopilot() const override { return true; }
+
+    // Return true if this mode is enabled, used by MAVLink available modes
+    bool enabled() const override;
 
 protected:
 
@@ -2020,7 +2044,7 @@ public:
     void suspend_auto();
     void init_auto();
 
-    bool requires_GPS() const override { return true; }
+    bool requires_position() const override { return true; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return true; }
     bool is_autopilot() const override { return true; }
@@ -2100,7 +2124,7 @@ public:
     void run() override;
 
     bool is_autopilot() const override { return true; }
-    bool requires_GPS() const override { return false; }
+    bool requires_position() const override { return false; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(AP_Arming::Method method) const override { return false; };
 

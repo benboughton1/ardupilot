@@ -124,7 +124,7 @@ const AP_Param::GroupInfo QuadPlane::var_info[] = {
 
     // @Param: LAND_FINAL_ALT
     // @DisplayName: Land final altitude
-    // @Description: The altitude at which we should switch to Q_LAND_SPEED descent rate
+    // @Description: The altitude at which we should switch to Q_LAND_FINAL_SPD descent rate
     // @Units: m
     // @Range: 0.5 50
     // @Increment: 0.1
@@ -593,17 +593,17 @@ static const struct AP_Param::defaults_table_struct defaults_table[] = {
     { "Q_A_RATE_Y_MAX",   75.0 },
     { "Q_M_SPOOL_TIME",   0.25 },
     { "Q_LOIT_ANG_MAX",   15.0 },
-    { "Q_LOIT_ACC_MAX",   250.0 },
-    { "Q_LOIT_BRK_ACCEL", 50.0 },
-    { "Q_LOIT_BRK_JERK",  250 },
-    { "Q_LOIT_SPEED",     500 },
-    { "Q_WP_SPEED",       500 },
-    { "Q_WP_ACCEL",       100 },
+    { "Q_LOIT_ACC_MAX_M", 2.50 },
+    { "Q_LOIT_BRK_ACC_M", 0.5 },
+    { "Q_LOIT_BRK_JRK_M", 2.5 },
+    { "Q_LOIT_SPEED_MS",  5.0 },
+    { "Q_WP_SPD",         5.0 },
+    { "Q_WP_ACC",         1.0 },
     { "Q_P_JERK_NE",      2   },
     // lower rotational accel limits
-    { "Q_A_ACCEL_R_MAX", 40000 },
-    { "Q_A_ACCEL_P_MAX", 40000 },
-    { "Q_A_ACCEL_Y_MAX", 10000 },
+    { "Q_A_ACC_R_MAX", 400 },
+    { "Q_A_ACC_P_MAX", 400 },
+    { "Q_A_ACC_Y_MAX", 100 },
 };
 
 /*
@@ -830,6 +830,12 @@ bool QuadPlane::setup(void)
 
     // upgrade position controller parameters added Dec 2025
     pos_control->convert_parameters();
+
+    // upgrade waypoint navigation parameters
+    wp_nav->convert_parameters();
+
+    // upgrade loiter navigation parameters
+    loiter_nav->convert_parameters();
 
     // Provisionally assign the SLT thrust type.
     // It will be overwritten by tailsitter or tiltorotor setups.
@@ -1957,6 +1963,12 @@ void QuadPlane::update_throttle_hover()
  */
 void QuadPlane::motors_output(bool run_rate_controller)
 {
+    // QuadPlane has no pre-takeoff RPM gate that asserts the spool-up block,
+    // so clear it every cycle before motors->output() runs output_logic().
+    // Without this the block set during ground-idle ramp would never clear
+    // and the spool would stay in GROUND_IDLE.
+    motors->set_spoolup_block(false);
+
     /* Delay for ARMING_DELAY_MS after arming before allowing props to spin:
        1) for safety (OPTION_DELAY_ARMING)
        2) to allow motors to return to vertical (OPTION_DISARMED_TILT)
@@ -2587,7 +2599,7 @@ void QuadPlane::vtol_position_controller(void)
         if (poscontrol.reached_wp_speed ||
             rel_groundspeed_sq < sq(wp_speed_ms) ||
             wp_speed_ms > 1.35*scaled_wp_speed_ms) {
-            // once we get below the Q_WP_SPEED then we don't want to
+            // once we get below the Q_WP_SPD then we don't want to
             // speed up again. At that point we should fly within the
             // limits of the configured VTOL controller we also apply
             // this limit when we are more than 45 degrees off the
@@ -2838,7 +2850,9 @@ void QuadPlane::vtol_position_controller(void)
             }
         }
         if (plane.control_mode == &plane.mode_guided || vtol_loiter_auto) {
-            plane.ahrs.get_location(plane.current_loc);
+            // FIXME: we have updated current_loc without updating the
+            // health flag.  And why are we doing this here?!
+            UNUSED_RESULT(plane.ahrs.get_location(plane.current_loc));
             int32_t target_altitude_cm;
             if (!plane.next_WP_loc.get_alt_cm(Location::AltFrame::ABOVE_ORIGIN,target_altitude_cm)) {
                 break;
@@ -4182,7 +4196,12 @@ void QuadPlane::update_throttle_mix(void)
           attitude control until LAND_FINAL
          */
         if (in_vtol_land_sequence()) {
-            use_mix_max = !in_vtol_land_final();
+            // during the descent phase we don't want to priortise
+            // attitude too much. Rapid descent on quadplanes often
+            // leads to very poor attitude control and putting more
+            // power into attitude doesn't tend to fix it, what we
+            // need to do is slow the descent.
+            use_mix_max = !in_vtol_land_descent() || poscontrol.get_state() == QPOS_LAND_ABORT;
         }
 
         if (use_mix_max) {
@@ -4624,11 +4643,13 @@ void SLT_Transition::force_transition_complete()
 
 MAV_VTOL_STATE SLT_Transition::get_mav_vtol_state() const
 {
-    if (quadplane.in_vtol_mode()) {
+    if (quadplane.in_vtol_land_approach()) {
         QuadPlane::position_control_state state = quadplane.poscontrol.get_state();
         if ((state == QuadPlane::position_control_state::QPOS_AIRBRAKE) || (state == QuadPlane::position_control_state::QPOS_POSITION1)) {
             return MAV_VTOL_STATE_TRANSITION_TO_MC;
         }
+    }
+    if (quadplane.in_vtol_mode()) {
         return MAV_VTOL_STATE_MC;
     }
 

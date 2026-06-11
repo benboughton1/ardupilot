@@ -171,7 +171,7 @@ bool ModeGuided::guided_set_destination(const Vector3f& destination)
 #if AP_FENCE_ENABLED
     // reject destination if outside the fence
     const Location dest_loc(destination, Location::AltFrame::ABOVE_ORIGIN);
-    if (!sub.fence.check_destination_within_fence(dest_loc)) {
+    if (!sub.fence.check_location_within_fence(dest_loc)) {
         LOGGER_WRITE_ERROR(LogErrorSubsystem::NAVIGATION, LogErrorCode::DEST_OUTSIDE_FENCE);
         // failure is propagated to GCS with NAK
         return false;
@@ -202,7 +202,7 @@ bool ModeGuided::guided_set_destination(const Location& dest_loc)
 #if AP_FENCE_ENABLED
     // reject destination outside the fence.
     // Note: there is a danger that a target specified as a terrain altitude might not be checked if the conversion to alt-above-home fails
-    if (!sub.fence.check_destination_within_fence(dest_loc)) {
+    if (!sub.fence.check_location_within_fence(dest_loc)) {
         LOGGER_WRITE_ERROR(LogErrorSubsystem::NAVIGATION, LogErrorCode::DEST_OUTSIDE_FENCE);
         // failure is propagated to GCS with NAK
         return false;
@@ -237,7 +237,7 @@ bool ModeGuided::guided_set_destination(const Vector3f& destination, bool use_ya
 #if AP_FENCE_ENABLED
     // reject destination if outside the fence
     const Location dest_loc(destination, Location::AltFrame::ABOVE_ORIGIN);
-    if (!sub.fence.check_destination_within_fence(dest_loc)) {
+    if (!sub.fence.check_location_within_fence(dest_loc)) {
         LOGGER_WRITE_ERROR(LogErrorSubsystem::NAVIGATION, LogErrorCode::DEST_OUTSIDE_FENCE);
         // failure is propagated to GCS with NAK
         return false;
@@ -303,7 +303,7 @@ bool ModeGuided::guided_set_destination_posvel(const Vector3f& destination, cons
 #if AP_FENCE_ENABLED
     // reject destination if outside the fence
     const Location dest_loc(destination, Location::AltFrame::ABOVE_ORIGIN);
-    if (!sub.fence.check_destination_within_fence(dest_loc)) {
+    if (!sub.fence.check_location_within_fence(dest_loc)) {
         LOGGER_WRITE_ERROR(LogErrorSubsystem::NAVIGATION, LogErrorCode::DEST_OUTSIDE_FENCE);
         // failure is propagated to GCS with NAK
         return false;
@@ -338,7 +338,7 @@ bool ModeGuided::guided_set_destination_posvel(const Vector3f& destination, cons
     #if AP_FENCE_ENABLED
     // reject destination if outside the fence
     const Location dest_loc(destination, Location::AltFrame::ABOVE_ORIGIN);
-    if (!sub.fence.check_destination_within_fence(dest_loc)) {
+    if (!sub.fence.check_location_within_fence(dest_loc)) {
         LOGGER_WRITE_ERROR(LogErrorSubsystem::NAVIGATION, LogErrorCode::DEST_OUTSIDE_FENCE);
         // failure is propagated to GCS with NAK
         return false;
@@ -464,7 +464,7 @@ void ModeGuided::guided_pos_control_run()
     if (!motors.armed()) {
         motors.set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
         // Sub vehicles do not stabilize roll/pitch/yaw when disarmed
-        attitude_control->set_throttle_out(0,true,g.throttle_filt);
+        attitude_control->set_throttle_out(NEUTRAL_THROTTLE,true,g.throttle_filt);
         attitude_control->relax_attitude_controllers();
         sub.wp_nav.wp_and_spline_init_m();
         return;
@@ -529,7 +529,7 @@ void ModeGuided::guided_vel_control_run()
     if (!motors.armed()) {
         motors.set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
         // Sub vehicles do not stabilize roll/pitch/yaw when disarmed
-        attitude_control->set_throttle_out(0,true,g.throttle_filt);
+        attitude_control->set_throttle_out(NEUTRAL_THROTTLE,true,g.throttle_filt);
         attitude_control->relax_attitude_controllers();
         // initialise velocity controller
         position_control->D_init_controller();
@@ -602,7 +602,7 @@ void ModeGuided::guided_posvel_control_run()
     if (!motors.armed()) {
         motors.set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
         // Sub vehicles do not stabilize roll/pitch/yaw when disarmed
-        attitude_control->set_throttle_out(0,true,g.throttle_filt);
+        attitude_control->set_throttle_out(NEUTRAL_THROTTLE,true,g.throttle_filt);
         attitude_control->relax_attitude_controllers();
         // initialise velocity controller
         position_control->D_init_controller();
@@ -682,7 +682,7 @@ void ModeGuided::guided_angle_control_run()
     if (!motors.armed()) {
         motors.set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
         // Sub vehicles do not stabilize roll/pitch/yaw when disarmed
-        attitude_control->set_throttle_out(0.0f,true,g.throttle_filt);
+        attitude_control->set_throttle_out(NEUTRAL_THROTTLE,true,g.throttle_filt);
         attitude_control->relax_attitude_controllers();
         // initialise velocity controller
         position_control->D_init_controller();
@@ -850,7 +850,9 @@ void ModeGuided::guided_limit_init_time_and_pos()
     guided_limit.start_time_ms = AP_HAL::millis();
 
     // initialise start position from current position
-    guided_limit.start_pos_neu_cm = inertial_nav.get_position_neu_cm();
+    Vector3f pos_cm = (position_control->get_pos_estimate_NED_m() * 100.0f).tofloat();
+    pos_cm.z = -pos_cm.z;
+    guided_limit.start_pos_neu_cm = pos_cm;
 }
 
 // guided_limit_check - returns true if guided mode has breached a limit
@@ -863,7 +865,8 @@ bool ModeGuided::guided_limit_check()
     }
 
     // get current location
-    const Vector3f& curr_pos_neu_cm = inertial_nav.get_position_neu_cm();
+    Vector3f curr_pos_neu_cm = (position_control->get_pos_estimate_NED_m() * 100.0f).tofloat();
+    curr_pos_neu_cm.z = -curr_pos_neu_cm.z;
 
     // check if we have gone below min alt
     if (!is_zero(guided_limit.alt_min_cm) && (curr_pos_neu_cm.z < guided_limit.alt_min_cm)) {

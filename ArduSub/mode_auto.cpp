@@ -111,7 +111,7 @@ void ModeAuto::auto_wp_run()
         // call attitude controller
         // Sub vehicles do not stabilize roll/pitch/yaw when disarmed
         motors.set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
-        attitude_control->set_throttle_out(0,true,g.throttle_filt);
+        attitude_control->set_throttle_out(NEUTRAL_THROTTLE,true,g.throttle_filt);
         attitude_control->relax_attitude_controllers();
         sub.wp_nav.wp_and_spline_init_m();                                                // Reset xy target
         return;
@@ -208,7 +208,7 @@ void ModeAuto::auto_circle_movetoedge_start(const Location &circle_center, float
         }
 
         // if we are outside the circle, point at the edge, otherwise hold yaw
-        float dist_to_center = get_horizontal_distance(inertial_nav.get_position_xy_cm().topostype(), sub.circle_nav.get_center_NEU_cm().xy());
+        float dist_to_center = get_horizontal_distance((position_control->get_pos_estimate_NED_m().xy() * 100.0f).tofloat(), sub.circle_nav.get_center_NEU_cm().xy().tofloat());
         if (dist_to_center > sub.circle_nav.get_radius_cm() && dist_to_center > 500) {
             set_auto_yaw_mode(get_default_auto_yaw_mode(false));
         } else {
@@ -302,7 +302,7 @@ void ModeAuto::auto_loiter_run()
     if (!motors.armed()) {
         motors.set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
         // Sub vehicles do not stabilize roll/pitch/yaw when disarmed
-        attitude_control->set_throttle_out(0,true,g.throttle_filt);
+        attitude_control->set_throttle_out(NEUTRAL_THROTTLE,true,g.throttle_filt);
         attitude_control->relax_attitude_controllers();
 
         sub.wp_nav.wp_and_spline_init_m();                                                // Reset xy target
@@ -479,7 +479,7 @@ void ModeAuto::auto_terrain_recover_run()
     // if not armed set throttle to zero and exit immediately
     if (!motors.armed()) {
         motors.set_desired_spool_state(AP_Motors::DesiredSpoolState::GROUND_IDLE);
-        attitude_control->set_throttle_out(0,true,g.throttle_filt);
+        attitude_control->set_throttle_out(NEUTRAL_THROTTLE,true,g.throttle_filt);
         attitude_control->relax_attitude_controllers();
 
         sub.loiter_nav.init_target();                                       // Reset xy target

@@ -529,6 +529,12 @@ void Copter::allocate_motors(void)
     // upgrade position controller parameters
     copter.pos_control->convert_parameters();
 
+    // convert wp_nav parameters
+    copter.wp_nav->convert_parameters();
+
+    // upgrade loiter navigation parameters
+    loiter_nav->convert_parameters();
+
 #if MODE_CIRCLE_ENABLED
     circle_nav->convert_parameters();
 #endif
