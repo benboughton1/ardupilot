@@ -13,12 +13,16 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Math/AP_Math.h>
+#include <AP_Vehicle/AP_Vehicle_Type.h>
 #include <SRV_Channel/SRV_Channel.h>
 #include <GCS_MAVLink/GCS.h>
 #include "AP_MotorsUGV.h"
 #include <AP_Relay/AP_Relay.h>
 #include <AP_BattMonitor/AP_BattMonitor.h>
 #include <AP_Scheduler/AP_Scheduler.h>
+#if APM_BUILD_TYPE(APM_BUILD_Rover)
+#include <AP_EZKontrolCAN/AP_EZKontrolCAN.h>
+#endif
 
 #define SERVO_MAX 4500  // This value represents 45 degrees and is just an arbitrary representation of servo max travel.
 
@@ -937,6 +941,19 @@ void AP_MotorsUGV::output_skid_steering(bool armed, float steering, float thrott
         motor_left *= thrust_asymmetry;
     }
 
+#if APM_BUILD_TYPE(APM_BUILD_Rover)
+    AP_EZKontrolCAN *ezk = AP::ezkontrol_can();
+    if (ezk != nullptr && ezk->enabled()) {
+        ezk->set_targets(motor_left, motor_right, armed);
+        const SRV_Channel::Limit output_limit = (!armed && _disarm_disable_pwm) ?
+                                                SRV_Channel::Limit::ZERO_PWM :
+                                                SRV_Channel::Limit::TRIM;
+        SRV_Channels::set_output_limit(SRV_Channel::k_throttleLeft, output_limit);
+        SRV_Channels::set_output_limit(SRV_Channel::k_throttleRight, output_limit);
+        return;
+    }
+#endif
+
     // send pwm value to each motor
     output_throttle(SRV_Channel::k_throttleLeft, 100.0f * motor_left, dt);
     output_throttle(SRV_Channel::k_throttleRight, 100.0f * motor_right, dt);
@@ -1289,4 +1306,3 @@ namespace AP {
         return AP_MotorsUGV::get_singleton();
     }
 }
-
