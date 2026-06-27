@@ -514,6 +514,40 @@ void AP_AHRS::update_state(void)
     state.velocity_NED_ok = active_estimates->get_velocity_NED(state.velocity_NED);
 }
 
+void AP_AHRS::try_set_common_origin(const AP_AHRS_Backend &source_backend, const AP_AHRS_Backend::Estimates &source_estimates)
+{
+    if (done_common_origin) {
+        return;
+    }
+
+    /*
+      if we now have an origin then set in all backends
+    */
+    if (!source_estimates.provides_common_origin) {
+        // e.g. DCM doesn't provide an origin which can be set
+        // into the other backends
+        return;
+    }
+    Location new_origin;
+    if (!source_backend.get_origin(new_origin)) {
+        // no valid origin from this backend
+        return;
+    }
+    // set the origin in all backends which can take it (except
+    // the one which supplied it).  Invoking AP_AHRS::set_origin
+    // here will cause warnings from the EKFs.
+    for (auto &dest_backend_and_estimates : backends_and_estimates) {
+        if (&dest_backend_and_estimates.estimates == &source_estimates) {
+            continue;
+        }
+        // note that SITL and DCM ignore this set_origin call via
+        // an empty base-class implementation:
+        dest_backend_and_estimates.backend.set_origin(new_origin);
+    }
+
+    done_common_origin = true;
+}
+
 // update run at loop rate
 void AP_AHRS::update(bool skip_ins_update)
 {
@@ -544,42 +578,36 @@ void AP_AHRS::update(bool skip_ins_update)
     // update autopilot-body-to-vehicle-body from _trim parameters:
     update_trim_rotation_matrices();
 
-#if AP_AHRS_DCM_ENABLED
-    update_DCM();
-#endif
-
     // update takeoff/touchdown flags
     update_flags();
 
-#if AP_AHRS_SIM_ENABLED
-    update_SITL();
-#endif
+    // update the backends, configured-first.  Some backends look at
+    // loop-time-remaining and opt-out of their full update if there
+    // isn't enough time left.  Copy back their results while we are
+    // at it.
+    configured_backend->update();
+    *configured_estimates = {};
+    configured_backend->get_results(*configured_estimates);
+    // if we don't have an origin, maybe set one:
+    try_set_common_origin(*configured_backend, *configured_estimates);
 
-#if AP_AHRS_EXTERNAL_ENABLED
-    update_external();
-#endif
-    
-    if (_ekf_type == 2) {
-        // if EK2 is primary then run EKF2 first to give it CPU
-        // priority
-#if HAL_NAVEKF2_AVAILABLE
-        update_EKF2();
-#endif
-#if HAL_NAVEKF3_AVAILABLE
-        update_EKF3();
-#endif
-    } else {
-        // otherwise run EKF3 first
-#if HAL_NAVEKF3_AVAILABLE
-        update_EKF3();
-#endif
-#if HAL_NAVEKF2_AVAILABLE
-        update_EKF2();
-#endif
+    for (auto &backend_and_estimates : backends_and_estimates) {
+        if (&backend_and_estimates.backend == configured_backend) {
+            // already updated
+            continue;
+        }
+        backend_and_estimates.backend.update();
+        backend_and_estimates.estimates = {};
+        backend_and_estimates.backend.get_results(backend_and_estimates.estimates);
+        // if we don't have an origin, maybe set one:
+        try_set_common_origin(backend_and_estimates.backend, backend_and_estimates.estimates);
     }
 
     update_configured_ekf_type();
     update_active_EKF_type();
+
+    // update blinking lights, buzzer etc bsaed on active EKF type:
+    update_notify_from_filter_status(active_estimates->filter_status);
 
 #if HAL_GCS_ENABLED
     if (state.active_EKF_type != last_active_ekf_type) {
@@ -622,152 +650,12 @@ void AP_AHRS::update(bool skip_ins_update)
 #endif
 }
 
-#if AP_AHRS_DCM_ENABLED
-void AP_AHRS::update_DCM()
-{
-    dcm.update();
-    dcm.get_results(dcm_estimates);
-}
-#endif
-
-#if AP_AHRS_SIM_ENABLED
-void AP_AHRS::update_SITL(void)
-{
-    sim.update();
-    sim.get_results(sim_estimates);
-}
-#endif
-
 void AP_AHRS::update_notify_from_filter_status(const nav_filter_status &status)
 {
     AP_Notify::flags.gps_fusion = status.flags.using_gps; // Drives AP_Notify flag for usable GPS.
     AP_Notify::flags.gps_glitching = status.flags.gps_glitching;
     AP_Notify::flags.have_pos_abs = status.flags.horiz_pos_abs;
 }
-
-#if HAL_NAVEKF2_AVAILABLE
-void AP_AHRS::update_EKF2(void)
-{
-    if (!ekf2.started) {
-        // wait 1 second for DCM to output a valid tilt error estimate
-        if (ekf2.start_time_ms == 0) {
-            ekf2.start_time_ms = AP_HAL::millis();
-        }
-#if HAL_LOGGING_ENABLED
-        // if we're doing Replay logging then don't allow any data
-        // into the EKF yet.  Don't allow it to block us for long.
-        if (!hal.util->was_watchdog_reset()) {
-            if (AP_HAL::millis() - ekf2.start_time_ms < 5000) {
-                if (!AP::logger().allow_start_ekf()) {
-                    return;
-                }
-            }
-        }
-#endif
-
-        if (AP_HAL::millis() - ekf2.start_time_ms > startup_delay_ms) {
-            ekf2.started = ekf2.EKF2.InitialiseFilter();
-        }
-    }
-    if (ekf2.started) {
-        ekf2.update();
-        ekf2_estimates = {};
-        ekf2.get_results(ekf2_estimates);
-        if (_active_EKF_type() == EKFType::TWO) {
-            update_notify_from_filter_status(ekf2_estimates.filter_status);
-        }
-
-        /*
-          if we now have an origin then set in all backends
-        */
-        if (!done_common_origin) {
-            Location new_origin;
-            if (ekf2.get_origin(new_origin)) {
-                done_common_origin = true;
-#if HAL_NAVEKF3_AVAILABLE
-                ekf3.set_origin(new_origin);
-#endif
-#if AP_AHRS_EXTERNAL_ENABLED
-                external.set_origin(new_origin);
-#endif
-            }
-        }
-    }
-}
-#endif
-
-#if HAL_NAVEKF3_AVAILABLE
-void AP_AHRS::update_EKF3(void)
-{
-    if (!ekf3.started) {
-        // wait 1 second for DCM to output a valid tilt error estimate
-        if (ekf3.start_time_ms == 0) {
-            ekf3.start_time_ms = AP_HAL::millis();
-        }
-#if HAL_LOGGING_ENABLED
-        // if we're doing Replay logging then don't allow any data
-        // into the EKF yet.  Don't allow it to block us for long.
-        if (!hal.util->was_watchdog_reset()) {
-            if (AP_HAL::millis() - ekf3.start_time_ms < 5000) {
-                if (!AP::logger().allow_start_ekf()) {
-                    return;
-                }
-            }
-        }
-#endif
-        if (AP_HAL::millis() - ekf3.start_time_ms > startup_delay_ms) {
-            ekf3.started = ekf3.EKF3.InitialiseFilter();
-        }
-    }
-    if (ekf3.started) {
-        ekf3.update();
-        ekf3_estimates = {};
-        ekf3.get_results(ekf3_estimates);
-        if (_active_EKF_type() == EKFType::THREE) {
-            update_notify_from_filter_status(ekf3_estimates.filter_status);
-        }
-        /*
-          if we now have an origin then set in all backends
-        */
-        if (!done_common_origin) {
-            Location new_origin;
-            if (ekf3.get_origin(new_origin)) {
-                done_common_origin = true;
-#if HAL_NAVEKF2_AVAILABLE
-                ekf2.set_origin(new_origin);
-#endif
-#if AP_AHRS_EXTERNAL_ENABLED
-                external.set_origin(new_origin);
-#endif
-            }
-        }
-    }
-}
-#endif
-
-#if AP_AHRS_EXTERNAL_ENABLED
-void AP_AHRS::update_external(void)
-{
-    external.update();
-    external.get_results(external_estimates);
-
-    /*
-      if we now have an origin then set in all backends
-    */
-    if (!done_common_origin) {
-        Location new_origin;
-        if (external.get_origin(new_origin)) {
-            done_common_origin = true;
-#if HAL_NAVEKF2_AVAILABLE
-            ekf2.set_origin(new_origin);
-#endif
-#if HAL_NAVEKF3_AVAILABLE
-            ekf3.set_origin(new_origin);
-#endif
-        }
-    }
-}
-#endif // AP_AHRS_EXTERNAL_ENABLED
 
 void AP_AHRS::reset()
 {
@@ -1314,71 +1202,6 @@ bool AP_AHRS::have_inertial_nav(void) const
     return active_EKF_type() != EKFType::DCM;
 #endif
     return true;
-}
-
-// returns the expected NED magnetic field
-bool AP_AHRS::get_mag_field_NED(Vector3f &vec) const
-{
-    switch (active_EKF_type()) {
-#if AP_AHRS_DCM_ENABLED
-    case EKFType::DCM:
-        return false;
-#endif
-#if HAL_NAVEKF2_AVAILABLE
-    case EKFType::TWO:
-        ekf2.EKF2.getMagNED(vec);
-        return true;
-#endif
-
-#if HAL_NAVEKF3_AVAILABLE
-    case EKFType::THREE:
-        ekf3.EKF3.getMagNED(vec);
-        return true;
-#endif
-
-#if AP_AHRS_SIM_ENABLED
-    case EKFType::SIM:
-        return false;
-#endif
-#if AP_AHRS_EXTERNAL_ENABLED
-    case EKFType::EXTERNAL:
-        return false;
-#endif
-    }
-    return false;
-}
-
-// returns the estimated magnetic field offsets in body frame
-bool AP_AHRS::get_mag_field_correction(Vector3f &vec) const
-{
-    switch (active_EKF_type()) {
-#if AP_AHRS_DCM_ENABLED
-    case EKFType::DCM:
-        return false;
-#endif
-#if HAL_NAVEKF2_AVAILABLE
-    case EKFType::TWO:
-        ekf2.EKF2.getMagXYZ(vec);
-        return true;
-#endif
-
-#if HAL_NAVEKF3_AVAILABLE
-    case EKFType::THREE:
-        ekf3.EKF3.getMagXYZ(vec);
-        return true;
-#endif
-
-#if AP_AHRS_SIM_ENABLED
-    case EKFType::SIM:
-        return false;
-#endif
-#if AP_AHRS_EXTERNAL_ENABLED
-    case EKFType::EXTERNAL:
-        return false;
-#endif
-    }
-    // since there is no default case above, this is unreachable
-    return false;
 }
 
 // get velocity down in m/s.  This returns get_velocity_NED.z() if available, otherwise falls back to get_vert_pos_rate_D()

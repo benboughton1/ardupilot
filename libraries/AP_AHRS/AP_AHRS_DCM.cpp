@@ -102,6 +102,18 @@ AP_AHRS_DCM::update()
     // remember the last origin for fallback support
     IGNORE_RETURN(AP::ahrs().get_origin(last_origin));
 
+    // update our wind estimate when a new GPS sample arrives and we
+    // have a 3D fix; the GPS velocity is what feeds the wind triangle.
+    // estimate_wind itself is rate-limited.
+    const AP_GPS &gps = AP::gps();
+    if (gps.status() >= AP_GPS_FixType::FIX_3D) {
+        const uint32_t last_gps_ms = gps.last_message_time_ms();
+        if (last_gps_ms != _last_wind_gps_ms) {
+            _last_wind_gps_ms = last_gps_ms;
+            estimate_wind();
+        }
+    }
+
 #if HAL_LOGGING_ENABLED
     const uint32_t now_ms = AP_HAL::millis();
     if (now_ms - last_log_ms >= 100) {
@@ -189,6 +201,9 @@ void AP_AHRS_DCM::get_results(AP_AHRS_Backend::Estimates &results)
      */
     results.location_valid = get_location(results.location);
 
+    // origin-relative functions
+    // results.provides_common_origin = false;
+
     // hagl is not supplied:
     // results.hagl_valid = false;
     // results.hagl = 0;
@@ -215,6 +230,15 @@ void AP_AHRS_DCM::get_results(AP_AHRS_Backend::Estimates &results)
 
     // are we consuming yaw from a source which is *not* a compass
     // results.using_noncompass_for_yaw = false;
+
+#if AP_AHRS_GET_MAG_DATA_ENABLED
+    // estimators can provide their predicted magnetic fields:
+    // ... but DCM does not:
+    // results.mag_field_NED = {};
+    // results.mag_field_NED_valid = false;
+    // results.mag_field_corrections = {};
+    // results.mag_field_corrections_valid = false;
+#endif  // AP_AHRS_GET_MAG_DATA_ENABLED
 
     /*
      * filter status and estimates quality values:
@@ -1054,14 +1078,29 @@ void AP_AHRS_DCM::estimate_wind(void)
     if (!AP::ahrs().get_wind_estimation_enabled()) {
         return;
     }
+
+    // the wind-triangle filters below blend a fixed fraction of the new
+    // estimate on each call, and the straight-flight branch does not
+    // update _last_wind_time, so the effective filter time constant is
+    // set by the call rate.  Now that this is driven on each new GPS
+    // sample rather than by a fixed-rate vehicle task, limit to 10Hz
+    // here so the time constant stays sane:
+    const uint32_t now = AP_HAL::millis();
+    if (now - _last_wind_estimate_ms < 100) {
+        return;
+    }
+    _last_wind_estimate_ms = now;
+
     const Vector3f &velocity = _last_velocity;
 
     // this is based on the wind speed estimation code from MatrixPilot by
     // Bill Premerlani. Adaption for ArduPilot by Jon Challinger
     // See http://gentlenav.googlecode.com/files/WindEstimation.pdf
-    const Vector3f fuselageDirection = _dcm_matrix.colx();
+    // use the trim-corrected (vehicle body) forward axis, not the raw board
+    // axis _dcm_matrix.colx(): a non-zero AHRS_TRIM otherwise feeds the wind
+    // triangle the sensor-board direction rather than the fuselage direction.
+    const Vector3f fuselageDirection = _body_dcm_matrix.colx();
     const Vector3f fuselageDirectionDiff = fuselageDirection - _last_fuse;
-    const uint32_t now = AP_HAL::millis();
 
     // scrap our data and start over if we're taking too long to get a direction change
     if (now - _last_wind_time > 10000) {
@@ -1109,7 +1148,7 @@ void AP_AHRS_DCM::estimate_wind(void)
 #if AP_AIRSPEED_ENABLED
     if (now - _last_wind_time > 2000 && airspeed_sensor_enabled()) {
         // when flying straight use airspeed to get wind estimate if available
-        const Vector3f airspeed = _dcm_matrix.colx() * AP::airspeed()->get_airspeed();
+        const Vector3f airspeed = fuselageDirection * AP::airspeed()->get_airspeed();
         const Vector3f wind = velocity - (airspeed * get_EAS2TAS());
         _wind = _wind * 0.92f + wind * 0.08f;
     }

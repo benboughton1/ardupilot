@@ -191,6 +191,9 @@ void AP_AHRS_SIM::get_results(AP_AHRS_Backend::Estimates &results)
      */
     results.location_valid = get_location(results.location);
 
+    // origin-relative functions
+    // results.provides_common_origin = false;
+
     results.hagl_valid = true;
     results.hagl = _sitl->state.altitude - AP::ahrs().get_home().alt*0.01f;
 
@@ -217,6 +220,15 @@ void AP_AHRS_SIM::get_results(AP_AHRS_Backend::Estimates &results)
     // are we consuming yaw from a source which is *not* a compass
     // (e.g. the GSF)
     // results.using_noncompass_for_yaw = false;
+
+#if AP_AHRS_GET_MAG_DATA_ENABLED
+    // estimators can provide their predicted magnetic fields:
+    // ... but SIM does not (and probably should!):
+    // results.mag_field_NED = {};
+    // results.mag_field_NED_valid = false;
+    // results.mag_field_corrections = {};
+    // results.mag_field_corrections_valid = false;
+#endif  // AP_AHRS_GET_MAG_DATA_ENABLED
 
     /*
      * filter status and estimates quality values:

@@ -137,13 +137,6 @@ public:
     // returns forward head-wind component in m/s. Negative means tail-wind
     float head_wind(void) const;
 
-    // instruct DCM to update its wind estimate:
-    void estimate_wind() {
-#if AP_AHRS_DCM_ENABLED
-        dcm.estimate_wind();
-#endif
-    }
-
 #if AP_AHRS_EXTERNAL_WIND_ESTIMATE_ENABLED
     void set_external_wind_estimate(float speed, float direction) {
         dcm.set_external_wind_estimate(speed, direction);
@@ -448,11 +441,19 @@ public:
     // returns true on success and results are placed in innovations and variances arguments
     bool get_vel_innovations_and_variances_for_source(uint8_t source, Vector3f &innovations, Vector3f &variances) const WARN_IF_UNUSED;
 
+#if AP_AHRS_GET_MAG_DATA_ENABLED
     // returns the expected NED magnetic field
-    bool get_mag_field_NED(Vector3f& ret) const;
+    bool get_mag_field_NED(Vector3f& ret) const {
+        ret = active_estimates->mag_field_NED;
+        return active_estimates->mag_field_NED_valid;
+    }
 
     // returns the estimated magnetic field offsets in body frame
-    bool get_mag_field_correction(Vector3f &ret) const;
+    bool get_mag_field_correction(Vector3f &ret) const {
+        ret = active_estimates->mag_field_corrections;
+        return active_estimates->mag_field_corrections_valid;
+    }
+#endif  // AP_AHRS_GET_MAG_DATA_ENABLED
 
     // return the index of the airspeed we should use for airspeed measurements
     // with multiple airspeed sensors and airspeed affinity in EKF3, it is possible to have switched
@@ -846,17 +847,7 @@ private:
     float _sin_pitch;
     float _sin_yaw;
 
-#if HAL_NAVEKF2_AVAILABLE
-    void update_EKF2(void);
-#endif
-#if HAL_NAVEKF3_AVAILABLE
-    void update_EKF3(void);
-#endif
-
-    static constexpr uint16_t startup_delay_ms = 1000;
     uint8_t _ekf_flags; // bitmask from Flags enumeration
-
-    void update_DCM();
 
     /*
      * home-related state
@@ -884,14 +875,6 @@ private:
     void update_AOA_SSA(void);
 
     EKFType last_active_ekf_type;
-
-#if AP_AHRS_SIM_ENABLED
-    void update_SITL(void);
-#endif
-
-#if AP_AHRS_EXTERNAL_ENABLED
-    void update_external(void);
-#endif    
 
     /*
      * trim-related state and private methods:
@@ -1131,6 +1114,7 @@ private:
 
     // true when we have completed the common origin setup
     bool done_common_origin;
+    void try_set_common_origin(const AP_AHRS_Backend &source_backend, const AP_AHRS_Backend::Estimates &source_estimates);
 
     // return a pointer to the backend for supplied type
     AP_AHRS_Backend *backend_for_type(EKFType type);

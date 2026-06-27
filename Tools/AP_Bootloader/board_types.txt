@@ -65,6 +65,9 @@ Reserved "GUMSTIX [BL] FMU v6"         54
 Reserved "ARK CAN FLOW"                80
 Reserved "NXP ucans32k146"             34
 
+# IDs 110-119 reserved for Syro
+TARGET_HW_SYRO_V6X                     110
+
 # values from external vendors
 EXT_HW_RADIOLINK_MINI_PIX               3
 
@@ -355,7 +358,10 @@ AP_HW_PRINCIPIOT_H7PI                1248
 
 AP_HW_KT_FMU_F1                      1250
 
+AP_HW_GPILOT_P1						 1275
+
 AP_HW_SKYDROID-S3                    1300
+
 AP_HW_CBUnmanned-CM405-FC            1301
 AP_HW_CBU_H753-SOM                   1302
 
@@ -501,6 +507,8 @@ AP_HW_TBS_LUCID_PRO                  5251
 AP_HW_TBS_L431_PERIPH                5252
 AP_HW_TBS_LUCID_H7_WING              5253
 AP_HW_TBS_LUCID_H7_WING_AIO          5254
+AP_HW_TBS_LUCID_H7_OEM               5255
+AP_HW_TBS_LUCID_H7V3                 5256
 
 # IDs 5270-5279 reserved for SpeedyBee
 AP_HW_SpeedyBeeF405WINGV2            5270
@@ -595,7 +603,9 @@ AP_HW_VUAV-TinyV7                    7101
 AP_HW_AEROFOX_H7                     7110
 
 # IDs 7120-7129 reserved for Accton Godwit
-AP_HW_Accton_Godwit_GA1        7120
+AP_HW_Accton_Godwit_GA1              7120
+AP_HW_Accton_Godwit_GFF4             7121
+AP_HW_Accton_Godwit_GFH7             7122
 
 # please fill gaps in the above ranges rather than adding past ID #7199
 
