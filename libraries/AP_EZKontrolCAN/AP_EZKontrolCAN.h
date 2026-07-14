@@ -16,9 +16,10 @@
 #pragma once
 
 #include <AP_Param/AP_Param.h>
+#include <AP_ESC_Telem/AP_ESC_Telem_Backend.h>
 #include <AP_HAL/CANIface.h>
 
-class AP_EZKontrolCAN {
+class AP_EZKontrolCAN : public AP_ESC_Telem_Backend {
 public:
     AP_EZKontrolCAN();
 
@@ -53,6 +54,7 @@ private:
 
     struct ControllerState {
         uint8_t address = 0;
+        uint8_t esc_index = 0;
         bool handshake_complete = false;
         uint8_t life_counter = 0;
         uint32_t last_handshake_ms = 0;
@@ -102,9 +104,9 @@ private:
     void handle_rx_frame(const AP_HAL::CANFrame &frame);
     void handle_telemetry_1(ControllerState &state, const AP_HAL::CANFrame &frame);
     void handle_telemetry_2(ControllerState &state, const AP_HAL::CANFrame &frame);
+    void publish_esc_telem(const ControllerState &state, uint16_t data_mask, bool publish_rpm);
     void send_handshake_ack(uint8_t dest_addr);
     void send_command(ControllerState &state, float target_norm, bool armed);
-    void publish_esc_telem(const ControllerState &state) const;
     void update_health();
     ControllerState *find_state_by_address(uint8_t address);
 };
