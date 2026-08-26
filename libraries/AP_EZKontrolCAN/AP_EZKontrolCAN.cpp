@@ -133,6 +133,7 @@ void AP_EZKontrolCAN::init()
     reset_controller_state(_left_state);
     reset_controller_state(_right_state);
 
+#if HAL_NUM_CAN_IFACES > 0
     if (!enabled()) {
         return;
     }
@@ -170,6 +171,7 @@ void AP_EZKontrolCAN::init()
                       unsigned(_left_state.address),
                       unsigned(_right_state.address));
     }
+#endif // HAL_NUM_CAN_IFACES > 0
 }
 
 void AP_EZKontrolCAN::set_targets(float left_norm, float right_norm, bool armed)
