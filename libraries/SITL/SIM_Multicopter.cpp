@@ -62,6 +62,9 @@ void MultiCopter::calculate_forces(const struct sitl_input &input, Vector3f &rot
  */
 void MultiCopter::update(const struct sitl_input &input)
 {
+    // refresh mass in case SIM_FRM_ parameters have changed
+    mass = frame->get_mass();
+
     // get wind vector setup
     update_wind(input);
 
@@ -87,7 +90,14 @@ void MultiCopter::update(const struct sitl_input &input)
 }
 
 void MultiCopter::update_battery() {
-    battery.maybe_reset(sitl->batt_voltage, sitl->batt_capacity_ah);
+    if (frame->battery_changed()) {
+        // battery model changed via SIM_FRM_ parameters
+        battery.setup(frame->get_model_batt_capacity_ah(),
+                      frame->get_model_batt_resistance_ohm(),
+                      frame->get_model_batt_max_voltage(),
+                      ambient_outside_temperature_degC());
+    }
+    battery.maybe_reset(sitl->batt_voltage, sitl->batt_capacity_ah, sitl->batt_resistance);
     battery_voltage = battery.get_voltage();
     battery_current = frame->get_current_amp();
     battery_temperature_degC = battery.get_temperature_degC();
