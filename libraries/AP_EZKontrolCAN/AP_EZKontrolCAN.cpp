@@ -36,7 +36,9 @@ const AP_Param::GroupInfo AP_EZKontrolCAN::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("ENABLE", 1, AP_EZKontrolCAN, _enable, 0),
 
-    // Parameter indexes 2 and 3 were CAN_PORT and BITRATE. CANManager now owns these.\n\n    // @Param: ADDR_L
+    // Parameter indexes 2 and 3 were CAN_PORT and BITRATE. CANManager now owns these.
+
+    // @Param: ADDR_L
     // @DisplayName: EZKontrol left motor address
     // @Description: Left motor node address
     // @User: Advanced
