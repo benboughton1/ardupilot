@@ -17,6 +17,8 @@
 #include "AP_EZKontrolCAN_protocol.h"
 
 #include <AP_Common/AP_Common.h>
+#include <AP_CANManager/AP_CAN.h>
+#include <AP_CANManager/AP_CANManager.h>
 #include <AP_ESC_Telem/AP_ESC_Telem.h>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Math/AP_Math.h>
@@ -34,21 +36,7 @@ const AP_Param::GroupInfo AP_EZKontrolCAN::var_info[] = {
     // @User: Advanced
     AP_GROUPINFO("ENABLE", 1, AP_EZKontrolCAN, _enable, 0),
 
-    // @Param: CAN_PORT
-    // @DisplayName: EZKontrol CAN port
-    // @Description: CAN port index used for EZKontrol (1 or 2)
-    // @Values: 1:CAN1,2:CAN2
-    // @User: Advanced
-    AP_GROUPINFO("CAN_PORT", 2, AP_EZKontrolCAN, _can_port, 1),
-
-    // @Param: BITRATE
-    // @DisplayName: EZKontrol CAN bitrate
-    // @Description: CAN bitrate in kbit/s (controller expects protocol 2 for 250k, protocol 102 for 500k)
-    // @Values: 250:250k,500:500k
-    // @User: Advanced
-    AP_GROUPINFO("BITRATE", 3, AP_EZKontrolCAN, _bitrate, 250),
-
-    // @Param: ADDR_L
+    // Parameter indexes 2 and 3 were CAN_PORT and BITRATE. CANManager now owns these.\n\n    // @Param: ADDR_L
     // @DisplayName: EZKontrol left motor address
     // @Description: Left motor node address
     // @User: Advanced
@@ -102,6 +90,7 @@ const AP_Param::GroupInfo AP_EZKontrolCAN::var_info[] = {
 
 AP_EZKontrolCAN::AP_EZKontrolCAN() :
     _can_iface(nullptr),
+    _driver_index(0),
     _can_inited(false),
     _healthy(false),
     _left_target(0.0f),
@@ -133,45 +122,53 @@ void AP_EZKontrolCAN::init()
     reset_controller_state(_left_state);
     reset_controller_state(_right_state);
 
-#if HAL_NUM_CAN_IFACES > 0
+#if HAL_CANMANAGER_ENABLED && HAL_NUM_CAN_IFACES > 0
     if (!enabled()) {
         return;
     }
 
-    const int8_t port = _can_port.get();
-    if (port < 1 || port > HAL_NUM_CAN_IFACES) {
-        return;
+    if (!AP::can().register_driver(AP_CAN::Protocol::EZKontrol, this) && _debug.get() != 0) {
+        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "EZK CANManager registration failed");
     }
+#endif
+}
 
-    _can_iface = hal.can[port - 1];
-    if (_can_iface == nullptr) {
-        return;
-    }
-
-    const int16_t bitrate_kbps = _bitrate.get();
-    const uint32_t bitrate_bps = (bitrate_kbps == 250) ? 250000U : 500000U;
-
-    // TODO Stage 2: configure filters and protocol-specific options.
-    _can_inited = _can_iface->init(bitrate_bps);
+void AP_EZKontrolCAN::init(uint8_t driver_index)
+{
+    _driver_index = driver_index;
+    _can_inited = (_can_iface != nullptr);
     _healthy = _can_inited;
 
+    reset_controller_state(_left_state);
+    reset_controller_state(_right_state);
     _left_state.address = uint8_t(_addr_left.get());
     _left_state.esc_index = 0;
     _right_state.address = uint8_t(_addr_right.get());
     _right_state.esc_index = 1;
+
     const uint32_t now_ms = AP_HAL::millis();
     _left_state.last_handshake_ms = now_ms;
     _right_state.last_handshake_ms = now_ms;
 
     if (_debug.get() != 0) {
-        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "EZK CAN%u %uk init:%u L:0x%02x R:0x%02x",
-                      unsigned(port),
-                      unsigned(bitrate_kbps),
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "EZK CAN drv:%u init:%u L:0x%02x R:0x%02x",
+                      unsigned(_driver_index + 1U),
                       _can_inited ? 1U : 0U,
                       unsigned(_left_state.address),
                       unsigned(_right_state.address));
     }
-#endif // HAL_NUM_CAN_IFACES > 0
+}
+
+bool AP_EZKontrolCAN::add_interface(AP_HAL::CANIface *can_iface)
+{
+    if (can_iface == nullptr) {
+        return false;
+    }
+    if (_can_iface != nullptr && _can_iface != can_iface) {
+        return false;
+    }
+    _can_iface = can_iface;
+    return true;
 }
 
 void AP_EZKontrolCAN::set_targets(float left_norm, float right_norm, bool armed)

@@ -18,8 +18,9 @@
 #include <AP_Param/AP_Param.h>
 #include <AP_ESC_Telem/AP_ESC_Telem_Backend.h>
 #include <AP_HAL/CANIface.h>
+#include <AP_CANManager/AP_CANDriver.h>
 
-class AP_EZKontrolCAN : public AP_ESC_Telem_Backend {
+class AP_EZKontrolCAN : public AP_ESC_Telem_Backend, public AP_CANDriver {
 public:
     AP_EZKontrolCAN();
 
@@ -29,6 +30,8 @@ public:
     static AP_EZKontrolCAN *get_singleton();
 
     void init();
+    void init(uint8_t driver_index) override;
+    bool add_interface(AP_HAL::CANIface *can_iface) override;
     void set_targets(float left_norm, float right_norm, bool armed);
     void update();
 
@@ -69,8 +72,6 @@ private:
     };
 
     AP_Int8 _enable;
-    AP_Int8 _can_port;
-    AP_Int16 _bitrate;
     AP_Int16 _addr_left;
     AP_Int16 _addr_right;
     AP_Int8 _mode;
@@ -80,6 +81,7 @@ private:
     AP_Int16 _timeout_ms;
 
     AP_HAL::CANIface *_can_iface;
+    uint8_t _driver_index;
     bool _can_inited;
     bool _healthy;
 
