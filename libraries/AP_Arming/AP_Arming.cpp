@@ -1376,6 +1376,7 @@ bool AP_Arming::can_checks(bool report)
                 case AP_CAN::Protocol::Scripting:
                 case AP_CAN::Protocol::Scripting2:
                 case AP_CAN::Protocol::KDECAN:
+                case AP_CAN::Protocol::EZKontrol:
 
                     break;
             }
